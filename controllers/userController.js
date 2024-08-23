@@ -2,12 +2,10 @@ const bcrypt = require("bcryptjs");
 const HttpError = require("../models/errorModel");
 const User = require("../models/userModel");
 
-// Render the signup form
 module.exports.renderSignupForm = (req, res) => {
     res.render("users/signup");
 };
 
-// Register a new user
 module.exports.registerUser = async (req, res, next) => {
     try {
         const { name, email, password, phone, profession } = req.body;
@@ -42,12 +40,10 @@ module.exports.registerUser = async (req, res, next) => {
     }
 };
 
-// Render the login form
 module.exports.renderLoginForm = (req, res) => {
     res.render("users/login");
 };
 
-// Log in a user
 module.exports.loginUser = async (req, res, next) => {
     try {
         const { email, password } = req.body;
@@ -74,7 +70,6 @@ module.exports.loginUser = async (req, res, next) => {
     }
 };
 
-// Render the edit user form
 module.exports.renderEditUserForm = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -92,7 +87,6 @@ module.exports.renderEditUserForm = async (req, res, next) => {
     }
 };
 
-// Edit a user
 module.exports.editUser = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -147,7 +141,6 @@ module.exports.editUser = async (req, res, next) => {
     }
 };
 
-// Delete a user
 module.exports.deleteUser = async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -180,7 +173,6 @@ module.exports.deleteUser = async (req, res, next) => {
     }
 };
 
-// Get all users and render the home page
 module.exports.getAllUsers = async (req, res, next) => {
     try {
         const users = await User.find({}, '-password'); // Exclude passwords from the result
