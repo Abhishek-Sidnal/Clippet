@@ -2,135 +2,192 @@ const bcrypt = require("bcryptjs");
 const HttpError = require("../models/errorModel");
 const User = require("../models/userModel");
 
-const registerUser = async (req, res, next) => {
+// Render the signup form
+module.exports.renderSignupForm = (req, res) => {
+    res.render("users/signup");
+};
+
+// Register a new user
+module.exports.registerUser = async (req, res, next) => {
     try {
         const { name, email, password, phone, profession } = req.body;
 
         if (!name || !email || !password || !phone || !profession) {
-            return next(new HttpError("Fill the all details.", 422));
+            req.flash("error", "Please fill in all details.");
+            return res.redirect("/signup");
         }
-        const newEmail = email.toLowerCase();
 
+        const newEmail = email.toLowerCase();
         const emailExist = await User.findOne({ email: newEmail });
+
         if (emailExist) {
-            return next(new HttpError("Email already exists.", 422));
+            req.flash("error", "Email already exists.");
+            return res.redirect("/signup");
         }
 
         if (password.trim().length < 6) {
-            return next(new HttpError("Password should be at least 6 characters.", 422));
+            req.flash("error", "Password should be at least 6 characters.");
+            return res.redirect("/signup");
         }
+
         const salt = await bcrypt.genSalt(10);
         const hashPass = await bcrypt.hash(password, salt);
         const newUser = await User.create({ name, email: newEmail, password: hashPass, phone, profession });
-        res.status(201).json(`${newUser.email} registered`);
+
+        req.flash("success", `${newUser.email} registered successfully.`);
+        res.redirect("/login");
     } catch (error) {
-        return next(new HttpError("User Registration failed", 500));
+        req.flash("error", "User registration failed.");
+        res.redirect("/signup");
     }
 };
 
-const loginUser = async (req, res, next) => {
+// Render the login form
+module.exports.renderLoginForm = (req, res) => {
+    res.render("users/login");
+};
+
+// Log in a user
+module.exports.loginUser = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            return next(new HttpError("Fill in all details.", 422));
+            req.flash("error", "Please fill in all details.");
+            return res.redirect("/login");
         }
-        const newEmail = email.toLowerCase();
 
+        const newEmail = email.toLowerCase();
         const user = await User.findOne({ email: newEmail });
-        if (!user) {
-            return next(new HttpError("Invalid Credentials.", 422));
+
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            req.flash("error", "Invalid credentials.");
+            return res.redirect("/login");
         }
-        const comparePass = await bcrypt.compare(password, user.password);
-        if (!comparePass) {
-            return next(new HttpError("Invalid Credentials.", 422));
-        }
-        const { name, phone, profession } = user;
-        res.status(200).json({ name, phone, profession, email: user.email, id: user._id });
+
+        req.session.userId = user._id; // Assuming you're using sessions
+        req.flash("success", `Welcome back, ${user.name}!`);
+        res.redirect("/home");
     } catch (error) {
-        return next(new HttpError("Login failed", 500));
+        req.flash("error", "Login failed.");
+        res.redirect("/login");
     }
 };
 
-const editUser = async (req, res, next) => {
+// Render the edit user form
+module.exports.renderEditUserForm = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(id);
+
+        if (!user) {
+            req.flash("error", "User not found.");
+            return res.redirect("/home");
+        }
+
+        res.render("users/edit", { user });
+    } catch (error) {
+        req.flash("error", "Failed to load edit form.");
+        res.redirect("/home");
+    }
+};
+
+// Edit a user
+module.exports.editUser = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { name, email, currentPassword, newPassword, confirmPassword, phone, profession } = req.body;
 
         const user = await User.findById(id);
+
         if (!user) {
-            return next(new HttpError("User not found.", 404));
+            req.flash("error", "User not found.");
+            return res.redirect("/home");
         }
 
         if (currentPassword) {
             const isPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
+
             if (!isPasswordCorrect) {
-                return next(new HttpError("Current password is incorrect.", 422));
+                req.flash("error", "Current password is incorrect.");
+                return res.redirect(`/users/edit/${id}`);
             }
 
             if (newPassword) {
                 if (newPassword.trim().length < 6) {
-                    return next(new HttpError("New password should be at least 6 characters.", 422));
+                    req.flash("error", "New password should be at least 6 characters.");
+                    return res.redirect(`/users/edit/${id}`);
                 }
+
                 if (newPassword !== confirmPassword) {
-                    return next(new HttpError("New password and confirm password do not match.", 422));
+                    req.flash("error", "New password and confirm password do not match.");
+                    return res.redirect(`/users/edit/${id}`);
                 }
 
                 const salt = await bcrypt.genSalt(10);
                 user.password = await bcrypt.hash(newPassword, salt);
             }
         } else if (newPassword || confirmPassword) {
-            return next(new HttpError("Current password is required to set a new password.", 422));
+            req.flash("error", "Current password is required to set a new password.");
+            return res.redirect(`/users/edit/${id}`);
         }
 
-        if (name) user.name = name;
-        if (email) user.email = email.toLowerCase();
-        if (phone) user.phone = phone;
-        if (profession) user.profession = profession;
+        user.name = name || user.name;
+        user.email = email ? email.toLowerCase() : user.email;
+        user.phone = phone || user.phone;
+        user.profession = profession || user.profession;
 
         await user.save();
 
-        res.status(200).json({ message: "User updated successfully", user });
+        req.flash("success", "User updated successfully.");
+        res.redirect("/home");
     } catch (error) {
-        return next(new HttpError("User update failed", 500));
+        req.flash("error", "User update failed.");
+        res.redirect("/home");
     }
 };
 
-const deleteUser = async (req, res, next) => {
+// Delete a user
+module.exports.deleteUser = async (req, res, next) => {
     try {
         const { id } = req.params;
 
         // Validate ObjectId format
         if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-            return next(new HttpError("Invalid user ID.", 400));
+            req.flash("error", "Invalid user ID.");
+            return res.redirect("/home");
         }
 
         const user = await User.findByIdAndDelete(id);
+
         if (!user) {
-            return next(new HttpError("User not found.", 404));
+            req.flash("error", "User not found.");
+            return res.redirect("/home");
         }
 
-        res.status(200).json({ message: "User deleted successfully" });
+        // Check if any users remain in the database
+        const remainingUsers = await User.countDocuments({});
+        if (remainingUsers === 0) {
+            req.flash("info", "All users have been deleted. Please register a new user.");
+            return res.redirect("/signup");
+        }
+
+        req.flash("success", "User deleted successfully.");
+        res.redirect("/home");
     } catch (error) {
-        console.error("Error deleting user:", error.message);
-        return next(new HttpError("User deletion failed", 500));
+        req.flash("error", "User deletion failed.");
+        res.redirect("/home");
     }
 };
 
-
-
-const getAllUsers = async (req, res, next) => {
+// Get all users and render the home page
+module.exports.getAllUsers = async (req, res, next) => {
     try {
         const users = await User.find({}, '-password'); // Exclude passwords from the result
 
-        if (!users || users.length === 0) {
-            return next(new HttpError("No users found.", 404));
-        }
-
-        res.status(200).json({ users });
+        res.render("users/home", { users });
     } catch (error) {
-        return next(new HttpError("Fetching users failed", 500));
+        req.flash("error", "Fetching users failed.");
+        res.render("users/home", { users: [] });
     }
 };
-
-module.exports = { registerUser, loginUser, editUser, deleteUser, getAllUsers };
